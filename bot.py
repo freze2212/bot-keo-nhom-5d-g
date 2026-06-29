@@ -103,26 +103,41 @@ WIN_PROBABILITY = 0.90  # 90%
 LOSE_PROBABILITY = 0.10  # 10%
 
 sent_slots = set()
-MIN_MESSAGES = 10  # Tin 1-10 trong chat nguồn (index 0-9)
-FIXED_SEND_ORDER = [2, 3, 4, 5, 6, 7]  # Tin 3, 4, 5, 6, 7, 8
-RANDOM_BET_INDICES = [0, 1]              # Tin 1 hoặc 2 (Con/Cái)
-AFTER_RESULT_ORDER = [8, 9]              # Tin 9, 10
+MIN_MESSAGES = 9   # Tin 1-9 (index 0-8), tin 8=CON tin 9=CÁI
+BEFORE_BET_ORDER = [0, 1, 2, 3, 4]       # Tin 1, 2, 3, 4, 5
+CON_BET_INDEX = 7                        # Tin 8 - CON
+CAI_BET_INDEX = 8                        # Tin 9 - CÁI
+AFTER_RESULT_ORDER = [5, 6]              # Tin 6, 7
 
 TZ = timezone(timedelta(hours=7))  # GMT+7 (Việt Nam)
-SCHEDULE_INTERVAL = 10
+SCHEDULE_INTERVAL = 5
 SCHEDULE_START_HOUR, SCHEDULE_START_MINUTE = 7, 0
 SCHEDULE_END_HOUR, SCHEDULE_END_MINUTE = 21, 50
 
 # Thay bằng thông tin của bạn
 api_id = int(os.getenv('API_ID'))
 api_hash = os.getenv('API_HASH')
-phone = os.getenv('PHONE')
+phone = (os.getenv('PHONE') or '').strip().replace(' ', '')
+
+def session_name_from_phone(phone_number):
+    digits = ''.join(c for c in (phone_number or '') if c.isdigit())
+    return f'user_session_{digits}' if digits else 'user_session'
+
+SESSION_NAME = session_name_from_phone(phone)
 
 # ID hoặc username nhóm (có thể là @tennhom hoặc ID số)
 group = os.getenv('GROUP')
 log(f"GROUP tu .env: {group}")
+log(f"Session: {SESSION_NAME} | PHONE tu .env: {phone}")
 
-client = TelegramClient('user_session', api_id, api_hash)
+client = TelegramClient(SESSION_NAME, api_id, api_hash)
+
+
+async def login_client():
+    if not phone:
+        log('[ERROR] PHONE chua cau hinh trong .env')
+        sys.exit(1)
+    await client.start(phone=phone)
 
 def ensure_directories():
     """Create necessary directories if they don't exist"""
@@ -312,7 +327,7 @@ async def daily_schedule(client, group):
             await client.connect()
             if not await client.is_user_authorized():
                 print("Cần đăng nhập lại...")
-                await client.start()
+                await login_client()
         
         # Lấy thông tin user từ username
         user = await client.get_entity('frezeit')
@@ -358,18 +373,17 @@ async def daily_schedule(client, group):
             )
             print(label or f"Đã gửi tin nhắn thứ {index + 1}")
 
-        # Tin 3,4,5,6,7,8 -> random 1 hoặc 2 -> ảnh kết quả -> tin 9,10
-        delays = [10, 10, 30, 60, 45, 45]
-        for i, index in enumerate(FIXED_SEND_ORDER):
+        # Tin 1-5 -> random tin 8 (CON) hoặc tin 9 (CÁI) -> ảnh kết quả -> tin 6-7
+        delays = [10, 10, 30, 60, 45]
+        for i, index in enumerate(BEFORE_BET_ORDER):
             await forward_slot(index, f"Đã gửi tin nhắn thứ {index + 1}")
             await asyncio.sleep(delays[i])
 
-        message_choice = random.choice(RANDOM_BET_INDICES)
-        bet_text = messages_to_send[message_choice].text or ''
-        side = 'CÁI' if detect_bet_side(bet_text) == 'cai' else 'CON'
-        await forward_slot(message_choice, f"Đã gửi tin nhắn thứ {message_choice + 1} ({side})")
+        message_choice = random.choice([CON_BET_INDEX, CAI_BET_INDEX])
+        is_cai = message_choice == CAI_BET_INDEX
+        side = 'CÁI' if is_cai else 'CON'
+        await forward_slot(message_choice, f"Đã gửi lệnh {side} (tin {message_choice + 1})")
         await asyncio.sleep(45)
-        is_cai = detect_bet_side(bet_text) == 'cai'
 
         # Bước 9: ảnh kết quả
         result = random.random()
@@ -404,7 +418,7 @@ async def daily_schedule(client, group):
             try:
                 await client.connect()
                 if not await client.is_user_authorized():
-                    await client.start()
+                    await login_client()
                 print("Đã kết nối lại thành công!")
             except Exception as reconnect_error:
                 print(f"Không thể kết nối lại: {reconnect_error}")
@@ -492,7 +506,7 @@ def is_within_schedule(hour, minute):
 
 
 def generate_daily_slots():
-    """7:00 -> 21:50, moi 10 phut (GMT+7)."""
+    """7:00 -> 21:50, moi 5 phut (GMT+7)."""
     slots = []
     start = SCHEDULE_START_HOUR * 60 + SCHEDULE_START_MINUTE
     end = SCHEDULE_END_HOUR * 60 + SCHEDULE_END_MINUTE
@@ -521,7 +535,7 @@ def get_next_slot(now):
 
 
 async def schedule_loop(entity):
-    """Moi 10 phut, 7:00 - 21:50 GMT+7."""
+    """Moi 5 phut, 7:00 - 21:50 GMT+7."""
     global sent_slots
     log(
         f"[INFO] Lich: moi {SCHEDULE_INTERVAL} phut, "
@@ -587,7 +601,7 @@ async def main():
 
     try:
         log("Dang ket noi Telegram...")
-        await client.start()
+        await login_client()
         configure_sqlite_session(client)
         me = await client.get_me()
         log(f"Dang nhap: {me.first_name} (@{me.username})")

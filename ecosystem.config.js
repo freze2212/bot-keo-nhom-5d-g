@@ -1,7 +1,7 @@
 module.exports = {
   apps: [
     {
-      name: 'bot-keo-nhom',
+      name: 'bot-keo-nhom-5d-g',
       script: 'bot.py',
       interpreter: './venv/bin/python',
       cwd: __dirname,

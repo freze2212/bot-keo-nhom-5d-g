@@ -32,15 +32,29 @@ def log(msg):
 LOCK_FILE = 'bot.lock'
 
 
+def is_process_running(pid):
+    if pid <= 0:
+        return False
+    if sys.platform == 'win32':
+        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+        if handle:
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return True
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
 def ensure_single_instance():
     """Chi cho phep 1 bot.py chay cung luc (tranh database is locked)."""
     if os.path.exists(LOCK_FILE):
         try:
             with open(LOCK_FILE, encoding='utf-8') as f:
                 old_pid = int(f.read().strip())
-            handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, old_pid)
-            if handle:
-                ctypes.windll.kernel32.CloseHandle(handle)
+            if is_process_running(old_pid):
                 log(f"[ERROR] Bot da chay o PID {old_pid}. Tat bot cu (Ctrl+C) roi chay lai.")
                 sys.exit(1)
         except (ValueError, OSError):

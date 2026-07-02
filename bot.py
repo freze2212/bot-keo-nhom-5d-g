@@ -117,11 +117,13 @@ WIN_PROBABILITY = 0.90  # 90%
 LOSE_PROBABILITY = 0.10  # 10%
 
 sent_slots = set()
-MIN_MESSAGES = 9   # Tin 1-9 (index 0-8), tin 8=CON tin 9=CÁI
-BEFORE_BET_ORDER = [0, 1, 2, 3, 4]       # Tin 1, 2, 3, 4, 5
-CON_BET_INDEX = 7                        # Tin 8 - CON
-CAI_BET_INDEX = 8                        # Tin 9 - CÁI
-AFTER_RESULT_ORDER = [5, 6]              # Tin 6, 7
+MIN_MESSAGES = 13  # Tin 1-13 (index 0-12)
+BEFORE_BET_ORDER = [0, 1, 2, 3]          # Tin 1, 2, 3, 4
+CON_BET_INDEX = 4                        # Tin 5 - CON
+CAI_BET_INDEX = 5                        # Tin 6 - CÁI
+WIN_RESULT_INDEX = 6                     # Tin 7 - thắng
+LOSE_RESULT_INDEX = 7                    # Tin 8 - thua
+AFTER_RESULT_ORDER = [8, 9, 10, 11, 12] # Tin 9, 10, 11, 12, 13
 
 TZ = timezone(timedelta(hours=7))  # GMT+7 (Việt Nam)
 SCHEDULE_INTERVAL = 5
@@ -387,8 +389,8 @@ async def daily_schedule(client, group):
             )
             print(label or f"Đã gửi tin nhắn thứ {index + 1}")
 
-        # Tin 1-5 -> random tin 8 (CON) hoặc tin 9 (CÁI) -> ảnh kết quả -> tin 6-7
-        delays = [10, 10, 30, 60, 45]
+        # Tin 1-4 -> random tin 5 (CON) / tin 6 (CÁI) -> tin 7 thắng / tin 8 thua -> tin 9-13
+        delays = [10, 10, 30, 60]
         for i, index in enumerate(BEFORE_BET_ORDER):
             await forward_slot(index, f"Đã gửi tin nhắn thứ {index + 1}")
             await asyncio.sleep(delays[i])
@@ -399,7 +401,6 @@ async def daily_schedule(client, group):
         await forward_slot(message_choice, f"Đã gửi lệnh {side} (tin {message_choice + 1})")
         await asyncio.sleep(45)
 
-        # Bước 9: ảnh kết quả
         result = random.random()
         if result < 0.8:  # 80% thắng
             is_win = True
@@ -410,14 +411,13 @@ async def daily_schedule(client, group):
         else:  # 10% hòa
             is_win = False
             is_tie = True
-        
-        # Gửi ảnh kết quả (bước 9)
+
         if is_tie:
             await send_result_image(group, 'tie', '**〰️ HÒA + 0%**')
         elif is_win:
-            await send_result_image(group, 'wincai' if is_cai else 'wincon', '**✔️ H + 10%**')
+            await forward_slot(WIN_RESULT_INDEX, f"Đã gửi tin thắng (tin {WIN_RESULT_INDEX + 1})")
         else:
-            await send_result_image(group, 'losecai' if is_cai else 'losecon', '**❌ GÃY -10%**')
+            await forward_slot(LOSE_RESULT_INDEX, f"Đã gửi tin thua (tin {LOSE_RESULT_INDEX + 1})")
         await asyncio.sleep(10)
 
         for index in AFTER_RESULT_ORDER:

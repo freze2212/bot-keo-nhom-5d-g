@@ -35,7 +35,7 @@ async def count_messages(username):
             messages.append(message)
     messages.sort(key=lambda x: x.id)
 
-    print(f"  @{username}: {len(messages)} tin (can toi thieu 13)")
+    print(f"  @{username}: {len(messages)} tin (can toi thieu 8)")
     for i, msg in enumerate(messages[:15]):
         preview = (msg.text or msg.message or '[media]').replace('\n', ' ')[:60]
         print(f"    [{i}] id={msg.id} | {preview}")

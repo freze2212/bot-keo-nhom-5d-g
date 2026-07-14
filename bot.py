@@ -117,18 +117,17 @@ WIN_PROBABILITY = 0.90  # 90%
 LOSE_PROBABILITY = 0.10  # 10%
 
 sent_slots = set()
-MIN_MESSAGES = 13  # Tin 1-13 (index 0-12)
+MIN_MESSAGES = 8   # Tin 1-8 (index 0-7)
 BEFORE_BET_ORDER = [0, 1, 2, 3]          # Tin 1, 2, 3, 4
 CON_BET_INDEX = 4                        # Tin 5 - CON
 CAI_BET_INDEX = 5                        # Tin 6 - CÁI
-WIN_RESULT_INDEX = 6                     # Tin 7 - thắng
-LOSE_RESULT_INDEX = 7                    # Tin 8 - thua
-AFTER_RESULT_ORDER = [8, 9, 10, 11, 12] # Tin 9, 10, 11, 12, 13
+WIN_RESULT_INDEX = 6                     # Tin 7 - thắng (chốt lãi)
+LOSE_RESULT_INDEX = 7                    # Tin 8 - thua (chốt lãi)
 
 TZ = timezone(timedelta(hours=7))  # GMT+7 (Việt Nam)
-SCHEDULE_INTERVAL = 5
-SCHEDULE_START_HOUR, SCHEDULE_START_MINUTE = 7, 0
-SCHEDULE_END_HOUR, SCHEDULE_END_MINUTE = 21, 50
+SCHEDULE_INTERVAL = 15
+SCHEDULE_START_HOUR, SCHEDULE_START_MINUTE = 12, 15
+SCHEDULE_END_HOUR, SCHEDULE_END_MINUTE = 0, 0
 
 # Thay bằng thông tin của bạn
 api_id = int(os.getenv('API_ID'))
@@ -389,7 +388,7 @@ async def daily_schedule(client, group):
             )
             print(label or f"Đã gửi tin nhắn thứ {index + 1}")
 
-        # Tin 1-4 -> random tin 5 (CON) / tin 6 (CÁI) -> tin 7 thắng / tin 8 thua -> tin 9-13
+        # Tin 1-4 -> random tin 5 (CON) / tin 6 (CÁI) -> chốt lãi tin 7 thắng / tin 8 thua
         delays = [10, 10, 30, 60]
         for i, index in enumerate(BEFORE_BET_ORDER):
             await forward_slot(index, f"Đã gửi tin nhắn thứ {index + 1}")
@@ -415,14 +414,10 @@ async def daily_schedule(client, group):
         if is_tie:
             await send_result_image(group, 'tie', '**〰️ HÒA + 0%**')
         elif is_win:
-            await forward_slot(WIN_RESULT_INDEX, f"Đã gửi tin thắng (tin {WIN_RESULT_INDEX + 1})")
+            await forward_slot(WIN_RESULT_INDEX, f"Đã gửi tin thắng / chốt lãi (tin {WIN_RESULT_INDEX + 1})")
         else:
-            await forward_slot(LOSE_RESULT_INDEX, f"Đã gửi tin thua (tin {LOSE_RESULT_INDEX + 1})")
+            await forward_slot(LOSE_RESULT_INDEX, f"Đã gửi tin thua / chốt lãi (tin {LOSE_RESULT_INDEX + 1})")
         await asyncio.sleep(10)
-
-        for index in AFTER_RESULT_ORDER:
-            await forward_slot(index, f"Đã gửi tin nhắn thứ {index + 1}")
-            await asyncio.sleep(10)
         print("=== KẾT THÚC PHIÊN ===\n")
     except Exception as e:
         print(f"Lỗi trong daily_schedule: {e}")
@@ -512,19 +507,41 @@ def is_schedule_minute(minute):
 
 
 def is_within_schedule(hour, minute):
-    """7:00 -> 21:50 (GMT+7)."""
+    """12:15 -> 00:00 (qua dem, GMT+7)."""
     current = hour * 60 + minute
     start = SCHEDULE_START_HOUR * 60 + SCHEDULE_START_MINUTE
     end = SCHEDULE_END_HOUR * 60 + SCHEDULE_END_MINUTE
-    return start <= current <= end
+    if start <= end:
+        return start <= current <= end
+    # Qua dem: tu start den 23:59 hoac tu 00:00 den end
+    return current >= start or current <= end
 
 
 def generate_daily_slots():
-    """7:00 -> 21:50, moi 5 phut (GMT+7)."""
+    """12:15 -> 00:00, moi 15 phut (GMT+7, qua dem)."""
     slots = []
     start = SCHEDULE_START_HOUR * 60 + SCHEDULE_START_MINUTE
     end = SCHEDULE_END_HOUR * 60 + SCHEDULE_END_MINUTE
+    day_minutes = 24 * 60
+
+    if start <= end:
+        minutes = start
+        while minutes <= end and len(slots) < 200:
+            hour, minute = divmod(minutes, 60)
+            slots.append(f"{hour:02d}:{minute:02d}")
+            if minutes >= end:
+                break
+            minutes += SCHEDULE_INTERVAL
+        return slots
+
+    # Qua dem: start -> 23:xx, roi den end (00:00)
     minutes = start
+    while minutes < day_minutes and len(slots) < 200:
+        hour, minute = divmod(minutes, 60)
+        slots.append(f"{hour:02d}:{minute:02d}")
+        minutes += SCHEDULE_INTERVAL
+
+    minutes = 0
     while minutes <= end and len(slots) < 200:
         hour, minute = divmod(minutes, 60)
         slots.append(f"{hour:02d}:{minute:02d}")
@@ -549,7 +566,7 @@ def get_next_slot(now):
 
 
 async def schedule_loop(entity):
-    """Moi 5 phut, 7:00 - 21:50 GMT+7."""
+    """Moi 15 phut, 12:15 - 00:00 GMT+7."""
     global sent_slots
     log(
         f"[INFO] Lich: moi {SCHEDULE_INTERVAL} phut, "
